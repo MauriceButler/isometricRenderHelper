@@ -8,7 +8,8 @@ bl_info = {
 
 import bpy
 import os
-    
+import math
+
 class SetupCamera(bpy.types.Operator):   
     bl_idname = "irh.setup_camera"
     bl_label = "Setup"
@@ -107,48 +108,93 @@ class CreateSpritesheet(bpy.types.Operator):
         createSpritesheet(self, context)
         return {'FINISHED'}
 
+
+def getFileCount(filepath):
+    return len([name for name in os.listdir(filepath) if os.path.isfile(os.path.join(filepath, name))])
+
+rotationMap = {
+    "NW": 0.785398,
+    "N": 1.5708,
+    "NE": 2.35619,
+    "E" : 3.14159,
+    "SE": 3.92699,
+    "S": 4.71239,
+    "SW": 5.49779,
+    "W": 6.28319
+}
+
+def renderAnimation(irhCircle, context, absAnimationOutputRoot, width, height, frameCount, animationName, direction):
+    irhCircle.rotation_euler[2] = rotationMap[direction]
+    context.scene.render.filepath = os.path.join(absAnimationOutputRoot, f"{direction}/")
+    bpy.ops.render.opengl(animation=True, write_still=True)
+
+    if frameCount is None:
+        frameCount = getFileCount(bpy.path.abspath(context.scene.render.filepath))
+
+    renderStrip(absAnimationOutputRoot, width, height, frameCount, animationName, direction)
+    
+    return frameCount
+
+def renderStrip(absAnimationOutputRoot, width, height, frameCount, animationName, direction):
+    command = f'montage {absAnimationOutputRoot}/{direction}/????.png -tile {frameCount}x1 -geometry {height}x{width}+0+0 -background transparent {absAnimationOutputRoot}/{animationName}_{direction}.png'
+    os.system(command)
+
+
+def renderSpriteSheet(absAnimationOutputRoot, width, height, animationName):
+    command = f'montage {absAnimationOutputRoot}/{animationName}_?.png {absAnimationOutputRoot}/{animationName}_??.png -tile 1x8 -geometry {8 * height}x{width}+0+0 -background transparent {absAnimationOutputRoot}/{animationName}.png'
+    print(command)
+    os.system(command)
+
+
 def createSpritesheet(self, context):
     outputRoot = context.scene.irh_settings.render_output_root
+    animationName = ""
 
     if outputRoot == '':
         self.report({"WARNING"}, "Please set a render output root directory")
         return {"CANCELLED"}
 
+    selection = bpy.context.selected_objects
+
+    if selection:
+        for obj in selection:
+            anim = obj.animation_data
+            if anim is not None and anim.action is not None:
+                animationName = anim.action.name
+                print(anim.action.frame_range)
+                # TODO: find out how to get animation lengths better
+                # context.scene.frame_start = anim.action.frame_range[0]
+                # context.scene.frame_end = anim.action.frame_range[1]
+                # context.scene.frame_step = 2
+                # context.scene.render.fps = 60
+    else:
+        self.report({"WARNING"}, "Please select an object with animations")
+        return {"CANCELLED"}
+
+    if animationName == "":
+        self.report({"WARNING"}, "Please select an animation")
+        return {"CANCELLED"}
+        
+
+    animationOutputRoot = os.path.join(outputRoot, animationName)
+    absAnimationOutputRoot = bpy.path.abspath(animationOutputRoot)
+    width = bpy.context.scene.render.resolution_x 
+    height = bpy.context.scene.render.resolution_y 
+
     irhCircle = bpy.data.objects['irh_circle']
     
-    irhCircle.rotation_euler[2] = 0.785398
-    context.scene.render.filepath = os.path.join(outputRoot, "NW/")
-    bpy.ops.render.opengl(animation=True, write_still=True)
+    frameCount = renderAnimation(irhCircle, context, absAnimationOutputRoot, width, height, None, animationName, "NW")
+    renderAnimation(irhCircle, context, absAnimationOutputRoot, width, height, None, animationName, "N")
+    renderAnimation(irhCircle, context, absAnimationOutputRoot, width, height, None, animationName, "NE")
+    renderAnimation(irhCircle, context, absAnimationOutputRoot, width, height, None, animationName, "E")
+    renderAnimation(irhCircle, context, absAnimationOutputRoot, width, height, None, animationName, "SE")
+    renderAnimation(irhCircle, context, absAnimationOutputRoot, width, height, None, animationName, "S")
+    renderAnimation(irhCircle, context, absAnimationOutputRoot, width, height, None, animationName, "SW")
+    renderAnimation(irhCircle, context, absAnimationOutputRoot, width, height, None, animationName, "W")
     
-    irhCircle.rotation_euler[2] = 1.5708
-    context.scene.render.filepath = os.path.join(outputRoot, "N/")
-    bpy.ops.render.opengl(animation=True, write_still=True)
-
-    irhCircle.rotation_euler[2] = 2.35619
-    context.scene.render.filepath = os.path.join(outputRoot, "NE/")
-    bpy.ops.render.opengl(animation=True, write_still=True)
-
-    irhCircle.rotation_euler[2] = 3.14159
-    context.scene.render.filepath = os.path.join(outputRoot, "E/")
-    bpy.ops.render.opengl(animation=True, write_still=True)
-
-    irhCircle.rotation_euler[2] = 3.92699
-    context.scene.render.filepath = os.path.join(outputRoot, "SE/")
-    bpy.ops.render.opengl(animation=True, write_still=True)
-
-    irhCircle.rotation_euler[2] = 4.71239
-    context.scene.render.filepath = os.path.join(outputRoot, "S/")
-    bpy.ops.render.opengl(animation=True, write_still=True)
-
-    irhCircle.rotation_euler[2] = 5.49779
-    context.scene.render.filepath = os.path.join(outputRoot, "SW/")
-    bpy.ops.render.opengl(animation=True, write_still=True)
-
-    irhCircle.rotation_euler[2] = 6.28319
-    context.scene.render.filepath = os.path.join(outputRoot, "W/")
-    bpy.ops.render.opengl(animation=True, write_still=True)
+    renderSpriteSheet(absAnimationOutputRoot, width, height, animationName)
     
-    
+    context.scene.render.filepath = outputRoot
 
    
 def menu_func(self, context):
